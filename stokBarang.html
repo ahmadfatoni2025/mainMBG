@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory with PDF & CSV Export</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        :root {
+            --background: #f0f2f5; --card-bg: #ffffff; --foreground: #1c1e21;
+            --muted-foreground: #65676b; --primary: #1877F2; --primary-light: #e7f3ff;
+            --success: #31A24C; --danger: #dc3545; --danger-light: #f8d7da; 
+            --secondary: #6c757d; /* Warna baru untuk tombol PDF */
+            --border-color: #dddfe2; --shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: var(--background); color: var(--foreground); margin: 0; padding: 2rem 1rem; }
+        .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+        .header h1 { font-size: 1.75rem; font-weight: bold; margin: 0; }
+        .header p { color: var(--muted-foreground); margin: 0; width: 100%; }
+        .header-buttons { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+        .btn { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.25rem; border-radius: 0.5rem; font-weight: bold; border: 1px solid transparent; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+        .btn-primary { background-color: var(--primary); color: white; }
+        .btn-success { background-color: var(--success); color: white; }
+        .btn-secondary { background-color: var(--secondary); color: white; }
+        .btn:hover { filter: brightness(0.95); }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.5rem; }
+        .card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 0.75rem; padding: 1.25rem; box-shadow: var(--shadow); }
+        .card-header p { color: var(--muted-foreground); font-size: 0.9rem; margin: 0; }
+        .card-value { font-size: 1.75rem; font-weight: bold; }
+        .table-container { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 1rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+        thead { background-color: #f5f6f7; }
+        th { font-weight: 600; color: var(--muted-foreground); font-size: 0.8rem; text-transform: uppercase; }
+        .action-cell { display: flex; gap: 0.5rem; }
+        .action-cell button { background: none; border: none; cursor: pointer; padding: 0.5rem; border-radius: 0.25rem; transition: background-color 0.2s; }
+        .action-cell button:hover { background-color: var(--background); }
+        .action-cell button.delete:hover { background-color: var(--danger-light); color: var(--danger); }
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.8); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background-color: white; padding: 1rem; border-radius: 0.75rem; width: 90%; max-width: 500px; box-shadow: 0 2px 4px rgba(0, 0, 0, .1), 0 8px 16px rgba(0, 0, 0, .1); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; padding-left: 1rem; padding-right: 1rem; }
+        .modal-header h2 { margin: 0; }
+        .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; }
+        .form-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; padding: 0 1rem; }
+        .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-group label { font-weight: 600; }
+        .form-group input { width: 100%; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border-color); box-sizing: border-box; background-color: #f5f6f7; }
+        .form-group input:focus { border-color: var(--primary); }
+        .modal-footer { margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0 1rem 1rem 1rem; }
+        @media (min-width: 640px) {
+            .header p { width: auto; }
+            .form-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="container">
+        <header class="header">
+            <div>
+                <h1>Raw Materials Inventory</h1>
+                <p>Manage raw food ingredients and materials</p>
+            </div>
+            <div class="header-buttons">
+                <button id="export-pdf-btn" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+                    Export to PDF
+                </button>
+                <button id="export-csv-btn" class="btn btn-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Export to CSV
+                </button>
+                <button id="add-material-btn" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Add Raw Material
+                </button>
+            </div>
+        </header>
+
+        <section class="stats-grid">
+            <div class="card"><div class="card-header"><p>Total Products</p></div><p class="card-value" id="total-products-value">0</p></div>
+            <div class="card"><div class="card-header"><p>Total Value</p></div><p class="card-value" id="total-inventory-value">IDR 0</p></div>
+            <div class="card"><div class="card-header"><p>Categories</p></div><p class="card-value" id="total-categories-value">0</p></div>
+            <div class="card"><div class="card-header"><p>Total Stock</p></div><p class="card-value" id="total-stock-value">0</p></div>
+        </section>
+
+        <section class="card table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Material Name</th> <th>Category</th> <th>Price</th>
+                        <th>Quantity</th> <th>Total</th> <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="product-table-body">
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div id="product-modal" class="modal-overlay">
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="modal-title">Add New Product</h2>
+                <button class="close-btn">&times;</button>
+            </header>
+            <form id="product-form">
+                <input type="hidden" id="product-id">
+                <div class="form-grid">
+                    <div class="form-group full-width"><label for="name">Product Name</label><input type="text" id="name" placeholder="e.g., Wortel" required></div>
+                    <div class="form-group"><label for="category">Category</label><input type="text" id="category" placeholder="e.g., Sayur" required></div>
+                    <div class="form-group"><label for="price">Price</label><input type="number" id="price" placeholder="e.g., 5000" min="0" required></div>
+                    <div class="form-group full-width"><label for="quantity">Quantity</label><input type="number" id="quantity" value="1" min="0" required></div>
+                </div>
+                <footer class="modal-footer">
+                    <button type="button" class="btn btn-outline close-btn">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Product</button>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const { jsPDF } = window.jspdf;
+
+        let products = [
+            { id: 1, name: 'Wortel', category: 'Sayur', price: 5000, quantity: 10 },
+            { id: 2, name: 'Cabai Merah', category: 'Bumbu', price: 8000, quantity: 5 },
+            { id: 3, name: 'Daging Sapi', category: 'Lauk', price: 45000, quantity: 2 },
+        ];
+
+        const tableBody = document.getElementById('product-table-body');
+        const modal = document.getElementById('product-modal');
+        const openModalBtn = document.getElementById('add-material-btn');
+        const closeModalBtns = document.querySelectorAll('.close-btn');
+        const productForm = document.getElementById('product-form');
+        const modalTitle = document.getElementById('modal-title');
+        const productIdInput = document.getElementById('product-id');
+        const exportCsvBtn = document.getElementById('export-csv-btn');
+        const exportPdfBtn = document.getElementById('export-pdf-btn');
+
+        function updateStats() {
+            const totalValue = products.reduce((sum, p) => sum + (p.price * p.quantity), 0);
+            const totalStock = products.reduce((sum, p) => sum + p.quantity, 0);
+            const categories = new Set(products.map(p => p.category)).size;
+            document.getElementById('total-products-value').textContent = products.length;
+            document.getElementById('total-inventory-value').textContent = `IDR ${totalValue.toLocaleString('id-ID')}`;
+            document.getElementById('total-categories-value').textContent = categories;
+            document.getElementById('total-stock-value').textContent = totalStock;
+        }
+
+        function renderTable() {
+            tableBody.innerHTML = ''; 
+            if (products.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center;">No products found. Add one!</td></tr>`;
+            } else {
+                products.forEach(product => {
+                    const total = product.price * product.quantity;
+                    const row = document.createElement('tr');
+                    row.dataset.id = product.id; 
+                    row.innerHTML = `
+                        <td>${product.name}</td><td>${product.category}</td><td>IDR ${product.price.toLocaleString('id-ID')}</td>
+                        <td>${product.quantity}</td><td>IDR ${total.toLocaleString('id-ID')}</td>
+                        <td class="action-cell">
+                            <button class="edit" title="Edit"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                            <button class="delete" title="Delete"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
+                        </td>`;
+                    tableBody.appendChild(row);
+                });
+            }
+            updateStats();
+        }
+
+        function openModalForEdit(id) {
+            const product = products.find(p => p.id === id); if (!product) return;
+            modalTitle.textContent = 'Edit Product'; productIdInput.value = product.id;
+            document.getElementById('name').value = product.name; document.getElementById('category').value = product.category;
+            document.getElementById('price').value = product.price; document.getElementById('quantity').value = product.quantity;
+            modal.style.display = 'flex';
+        }
+        
+        function openModalForAdd() {
+            modalTitle.textContent = 'Add New Product'; productForm.reset(); productIdInput.value = '';
+            modal.style.display = 'flex';
+        }
+        
+        function closeModal() { modal.style.display = 'none'; }
+        
+        function exportToCsv() {
+            if (products.length === 0) { alert("Tidak ada data untuk diekspor!"); return; }
+            const headers = ['Nama Produk', 'Kategori', 'Harga', 'Kuantitas', 'Total Harga'];
+            let csvContent = headers.join(',') + '\n';
+            products.forEach(product => {
+                const total = product.price * product.quantity;
+                const row = [`"${product.name}"`, `"${product.category}"`, product.price, product.quantity, total];
+                csvContent += row.join(',') + '\n';
+            });
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            const date = new Date().toISOString().slice(0, 10);
+            link.setAttribute('download', `rekap_inventaris_${date}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportToPdf() {
+            if (products.length === 0) {
+                alert("Tidak ada data untuk diekspor!");
+                return;
+            }
+            const doc = new jsPDF();
+            const tableHeaders = [['Nama Produk', 'Kategori', 'Harga Satuan', 'Kuantitas', 'Total Harga']];
+            const tableBody = products.map(p => [
+                p.name, p.category, `IDR ${p.price.toLocaleString('id-ID')}`,
+                p.quantity, `IDR ${(p.price * p.quantity).toLocaleString('id-ID')}`
+            ]);
+            const grandTotal = products.reduce((sum, p) => sum + (p.price * p.quantity), 0);
+            const tableFooter = [['', '', '', 'Grand Total', `IDR ${grandTotal.toLocaleString('id-ID')}`]];
+            doc.setFontSize(18);
+            doc.text('Rekap Inventaris Bahan Baku', 14, 22);
+            doc.setFontSize(11);
+            doc.setTextColor(100);
+            const today = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
+            doc.text(`Tanggal: ${today}`, 14, 29);
+            doc.autoTable({
+                head: tableHeaders, body: tableBody, foot: tableFooter, startY: 35, theme: 'grid',
+                headStyles: { fillColor: [24, 119, 242] },
+                // =========================================================================
+                // == INI BAGIAN YANG AKU PERBAIKI SAYANG, AKU TAMBAHIN WARNA TEKS HITAM ==
+                // =========================================================================
+                footStyles: { fillColor: [240, 242, 245], textColor: [0, 0, 0], fontStyle: 'bold' }
+            });
+            const date = new Date().toISOString().slice(0, 10);
+            doc.save(`rekap_inventaris_${date}.pdf`);
+        }
+
+        openModalBtn.addEventListener('click', openModalForAdd);
+        closeModalBtns.forEach(btn => btn.addEventListener('click', closeModal));
+        modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+        
+        productForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const productData = {
+                name: document.getElementById('name').value, category: document.getElementById('category').value,
+                price: parseFloat(document.getElementById('price').value), quantity: parseInt(document.getElementById('quantity').value, 10),
+            };
+            const id = productIdInput.value;
+            if (id) {
+                products = products.map(p => p.id === parseInt(id) ? { ...p, ...productData } : p);
+            } else {
+                products.push({ ...productData, id: Date.now() });
+            }
+            renderTable();
+            closeModal();
+        });
+        
+        tableBody.addEventListener('click', (e) => {
+            const deleteButton = e.target.closest('button.delete'); 
+            const editButton = e.target.closest('button.edit');
+            if (editButton) {
+                const id = parseInt(editButton.closest('tr').dataset.id); openModalForEdit(id);
+            }
+            if (deleteButton) {
+                const row = deleteButton.closest('tr'); const id = parseInt(row.dataset.id);
+                const productName = row.cells[0].textContent;
+                if (confirm(`Anda yakin ingin menghapus "${productName}"?`)) {
+                    products = products.filter(p => p.id !== id);
+                    renderTable();
+                }
+            }
+        });
+
+        exportCsvBtn.addEventListener('click', exportToCsv);
+        exportPdfBtn.addEventListener('click', exportToPdf);
+
+        renderTable();
+    });
+</script>
+
+</body>
+</html>
